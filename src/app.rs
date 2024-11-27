@@ -1,17 +1,19 @@
-use ratatui::widgets::*;
-use std::error;
-
 use crate::radiooo::{self, CountryForDecade};
+use libmpv2::Mpv;
+use log::{debug, error};
+use ratatui::widgets::*;
+use std::collections::HashMap;
+use std::{default, error, panic};
 const MAX_VOLUME: u16 = 150;
 const VOLUME_INCREMENT: u16 = 5;
 
 /// Application result type.
 pub type AppResult<T> = std::result::Result<T, Box<dyn error::Error>>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PlayState {
-    Paused,
-    Playing,
+    Paused(radiooo::Track),
+    Playing(radiooo::Track),
     Stopped,
 }
 
@@ -23,7 +25,7 @@ pub enum SelectedList {
 }
 
 /// Application.
-#[derive(Debug)]
+// #[derive(Debug)]
 pub struct App {
     /// Is the application running?
     pub running: bool,
@@ -31,7 +33,6 @@ pub struct App {
     /// volume
     pub volume: u16,
     pub muted: bool,
-
     pub play_state: PlayState,
 
     pub decade_state: ListState,
@@ -41,12 +42,14 @@ pub struct App {
     pub list_selected: SelectedList,
 
     pub current_setting: String,
-    pub country_available: radiooo::CountryForDecade,
+    pub country_availables: HashMap<i32, radiooo::CountryForDecade>,
+
+    pub mpv: Mpv,
 }
 
 impl App {
     /// Constructs a new instance of [`App`].
-    pub fn new() -> Self {
+    pub fn new(mpv: Mpv) -> Self {
         let mut decade_state = ListState::default();
         decade_state.select(Some(0));
         let mut mood_state = ListState::default();
@@ -63,7 +66,8 @@ impl App {
             country_state,
             list_selected: SelectedList::Decade,
             current_setting: String::from(""),
-            country_available: CountryForDecade::default(),
+            country_availables: HashMap::new(),
+            mpv: mpv,
         }
     }
 
@@ -75,33 +79,46 @@ impl App {
         self.running = false;
     }
     pub fn get_countries_available(&mut self) -> Vec<String> {
-        let mood = radiooo::MOODS.get(self.mood_state.offset()).unwrap_or(&"");
-        self.country_available
+        let decade = radiooo::DECADES
+            .get(self.decade_state.selected().unwrap_or(0))
+            .unwrap();
+        let mood = radiooo::MOODS
+            .get(self.mood_state.selected().unwrap_or(0))
+            .unwrap();
+        let mut av = self
+            .country_availables
+            .get(decade)
+            .expect("should find decade")
             .to_hash_map()
             .get(*mood)
             .expect("should find the hash map here")
-            .to_vec()
+            .to_vec();
+        av.sort();
+        return av.clone();
     }
 
-    pub fn update_country_available(&mut self) {
-        let decade = radiooo::DECADES
-            .get(self.decade_state.offset())
-            .unwrap_or(&0);
-        if let Some(ca) = radiooo::get_country_for_decade(*decade) {
-            self.country_available = ca
+    pub fn populate_countries_available(&mut self) {
+        for &decade in &radiooo::DECADES {
+            if let Some(ca) = radiooo::get_country_for_decade(decade) {
+                self.country_availables.insert(decade, ca);
+            } else {
+                error!("failed to call for {}", decade);
+                panic!("qsdqsd")
+            }
         }
     }
 
     pub fn playpause(&mut self) {
-        match self.play_state {
-            PlayState::Playing => {
+        match &self.play_state {
+            PlayState::Playing(track) => {
                 // send pause to mpv here
-                self.play_state = PlayState::Paused;
+                self.play_state = PlayState::Paused(track.clone());
             }
-            PlayState::Stopped | PlayState::Paused => {
+            PlayState::Paused(track) => {
                 // run play here and change state
-                self.play_state = PlayState::Playing;
+                self.play_state = PlayState::Playing(track.clone());
             }
+            _ => {}
         }
     }
     pub fn toggle_mute(&mut self) {

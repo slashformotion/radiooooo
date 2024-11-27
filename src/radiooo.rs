@@ -1,7 +1,8 @@
 use core::panic;
+use log::debug;
 use reqwest::blocking::Client;
 use serde::{de, Deserialize, Serialize};
-use std::{collections::HashMap, vec};
+use std::{collections::HashMap, io::Read, vec};
 use tokio::{runtime::Handle, task};
 
 pub const DECADES: [i32; 13] = [
@@ -82,7 +83,7 @@ pub fn get_track(mood: &str, decade: i32, country: &str) -> Option<Track> {
         let client = Client::new();
         // Define your request payload
         let payload = ExploreRequest {
-            mode: "explore".to_string(),
+            mode: "taxi".to_string(),
             isocodes: vec![country.to_string()],
             decades: vec![decade],
             moods: vec![mood.to_string()],
@@ -99,14 +100,17 @@ pub fn get_track(mood: &str, decade: i32, country: &str) -> Option<Track> {
         // Ensure the request was successful
         if response.status().is_success() {
             // Parse the JSON response
+            // debug!("rsp: {:?}", response.text().unwrap());
+
             let api_response: Track = response
                 .json()
                 .expect("should not have a problem unmarshalling json");
-
+            debug!("req: {} {} {}=>{}", mood, decade, country, api_response._id);
+            // return None;
             return Some(api_response);
         }
+
         panic!("{:?} {:?}", payload_json, response);
-        return None;
     });
 }
 
@@ -118,47 +122,47 @@ struct ExploreRequest {
     moods: Vec<String>,
 }
 
-#[derive(Deserialize, Debug, PartialEq)]
+#[derive(Deserialize, Debug, PartialEq, Clone)]
 pub struct Track {
     pub _id: String,
     pub mood: String,
     pub title: String,
     pub artist: String,
-    pub album: String,
-    pub songwriter: String, // This field seems to be always present but can be an empty string
-    pub label: String,
+    pub album: Option<String>,
+    pub songwriter: Option<String>, // This field seems to be always present but can be an empty string
+    pub label: Option<String>,
     pub country: String,
     pub year: String,
     pub decade: i32,
     pub length: u32,
     pub uuid: String,
-    pub ext: Ext,
-    pub image: Image,
+    pub ext: Option<Ext>,
+    pub image: Option<Image>,
     pub likes: u32,
     pub profile_id: String,
-    pub cover: Image,
+    pub cover: Option<Image>,
     pub image_v: u32,
     pub liked: u32,
     pub links: Links,
 }
 
-#[derive(Deserialize, Debug, PartialEq)]
-struct Ext {
+#[derive(Deserialize, Debug, PartialEq, Clone)]
+pub struct Ext {
     track: String,
-    cover: String,
+    cover: Option<String>,
 }
 
-#[derive(Deserialize, Debug, PartialEq)]
-struct Image {
+#[derive(Deserialize, Debug, PartialEq, Clone)]
+pub struct Image {
     path: String,
     filename: String,
     color: Option<String>,
 }
 
-#[derive(Deserialize, Debug, PartialEq)]
-struct Links {
-    mpeg: String,
-    ogg: String,
+#[derive(Deserialize, Debug, PartialEq, Clone)]
+pub struct Links {
+    pub mpeg: String,
+    pub ogg: String,
 }
 
 #[cfg(test)]
@@ -211,30 +215,30 @@ mod tests {
             mood: "FAST".to_string(),
             title: "Busco El Sol, No Sé Adonde Voy".to_string(),
             artist: "Caballo Vapor".to_string(),
-            album: "Busco El Sol, No Sé Adonde Voy SP".to_string(),
-            songwriter: "".to_string(),
-            label: "MH".to_string(),
+            album: Some("Busco El Sol, No Sé Adonde Voy SP".to_string()),
+            songwriter: Some("".to_string()),
+            label: Some("MH".to_string()),
             country: "ARG".to_string(),
             year: "1975".to_string(),
             decade: 1970,
             length: 199,
             uuid: "380ca57f-188e-4795-9b17-f1721a7e8188".to_string(),
-            ext: Ext {
+            ext: Some(Ext {
                 track: "mp3".to_string(),
-                cover: "jpg".to_string(),
-            },
-            image: Image {
+                cover: Some("jpg".to_string()),
+            }),
+            image: Some(Image {
                 path: "cover/ARG/1970/".to_string(),
                 filename: "380ca57f-188e-4795-9b17-f1721a7e8188.jpg".to_string(),
                 color: Some("#d56f68".to_string()),
-            },
+            }),
             likes: 324,
             profile_id: "5d3306de06fb03d8871fd12f".to_string(),
-            cover: Image {
+            cover: Some(Image {
                 path: "cover/ARG/1970/".to_string(),
                 filename: "380ca57f-188e-4795-9b17-f1721a7e8188.jpg".to_string(),
                 color: Some("#d56f68".to_string()),
-            },
+            }),
             image_v: 0,
             liked: 0,
             links: Links {

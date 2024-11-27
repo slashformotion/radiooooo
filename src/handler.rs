@@ -1,6 +1,9 @@
-use crate::app::{App, AppResult, SelectedList};
+use std::borrow::Borrow;
+
+use crate::app::{App, AppResult, PlayState, SelectedList};
 use crate::radiooo::{self, Track};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use log::{debug, info};
 
 /// Handles the key events and updates the state of [`App`].
 pub fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<()> {
@@ -22,20 +25,12 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<()> {
         // navigate ui
         KeyCode::Down | KeyCode::Char('j') => match app.list_selected {
             SelectedList::Mood => app.mood_state.select_next(),
-            SelectedList::Decade => {
-                app.decade_state.select_next();
-
-                app.update_country_available();
-            }
+            SelectedList::Decade => app.decade_state.select_next(),
             SelectedList::Country => app.country_state.select_next(),
         },
         KeyCode::Up | KeyCode::Char('k') => match app.list_selected {
             SelectedList::Mood => app.mood_state.select_previous(),
-            SelectedList::Decade => {
-                app.decade_state.select_previous();
-
-                app.update_country_available();
-            }
+            SelectedList::Decade => app.decade_state.select_previous(),
             SelectedList::Country => app.country_state.select_previous(),
         },
         KeyCode::Left | KeyCode::Char('h') => match app.list_selected {
@@ -59,16 +54,30 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<()> {
             app.toggle_mute();
         }
         KeyCode::Enter => {
-            let mood = radiooo::MOODS.get(app.mood_state.offset()).unwrap_or(&"");
-            let decade = radiooo::DECADES
-                .get(app.decade_state.offset())
-                .unwrap_or(&0);
-            let country = radiooo::COUNTRY_CODES
-                .get(app.country_state.offset())
-                .unwrap_or(&"");
-
-            if let Some(track) = radiooo::get_track(mood, *decade, country) {
-                app.current_setting = format!("{}", track.album)
+            let indexmoode = app.mood_state.selected().unwrap_or(0);
+            let indexdecade = app.decade_state.selected().unwrap_or(0);
+            let indexcountry = app.country_state.selected().unwrap_or(0);
+            debug!("indexes: {} {} {}", indexmoode, indexdecade, indexcountry);
+            let mood = radiooo::MOODS.get(indexmoode).unwrap_or(&"");
+            let decade = radiooo::DECADES.get(indexdecade).unwrap();
+            let country = app
+                .get_countries_available()
+                .get(indexcountry)
+                .unwrap()
+                .clone();
+            let opt = radiooo::get_track(mood, *decade, country.as_str());
+            if let Some(track) = opt {
+                info!("{:?}", track);
+                app.current_setting = format!(
+                    "{} - {} - {}",
+                    track.title,
+                    track.artist,
+                    track.album.unwrap_or_default()
+                );
+                app.mpv
+                    .command("loadfile", &[track.links.mpeg.as_str(), "replace"])
+                    .unwrap();
+                app.play_state = PlayState::Playing(track.clone());
             } else {
                 app.current_setting = format!("{}", "no track was found for current setting")
             }
